@@ -1,0 +1,6 @@
+{
+  "name": "Wishlist & Price Monitor",
+  "description": "Gerencie sua lista de compras, compare opções e monitore preços.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
