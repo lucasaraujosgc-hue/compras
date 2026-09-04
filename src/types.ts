@@ -3,6 +3,12 @@ export interface ProductOption {
   url: string;
   name: string;
   price: number | null;
+  originalPrice?: number | null;
+  installments?: {
+    count: number;
+    value: number;
+    interestFree: boolean;
+  } | null;
   imageUrl: string;
   loading?: boolean;
   error?: string;

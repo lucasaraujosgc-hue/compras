@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { WishlistItemType } from "../types";
 import { StarRating } from "./StarRating";
-import { Trash2, ExternalLink, RefreshCw } from "lucide-react";
+import { Trash2, ExternalLink, RefreshCw, Pencil, Check } from "lucide-react";
 import { cn, extractProduct, formatPrice } from "../lib/utils";
 
 interface WishlistItemProps {
@@ -15,11 +15,37 @@ export function WishlistItem({ item, updateItem, deleteItem, categories }: Wishl
   const [newOptionUrl, setNewOptionUrl] = useState("");
   const [isAddingOption, setIsAddingOption] = useState(false);
   const [loadingOption, setLoadingOption] = useState(false);
+  
+  const [isEditingItem, setIsEditingItem] = useState(false);
+  const [editData, setEditData] = useState({ name: "", price: 0, imageUrl: "" });
+
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const selectedOption = item.options[item.selectedOptionIndex] || item.options[0];
   
   // Ensure the current item's category is always visible in the dropdown, even if deleted from global list
   const displayCategories = Array.from(new Set([...categories, item.category]));
+
+  const handleStartEdit = () => {
+    setEditData({
+      name: selectedOption.name,
+      price: selectedOption.price || 0,
+      imageUrl: selectedOption.imageUrl
+    });
+    setIsEditingItem(true);
+  };
+
+  const handleSaveEdit = () => {
+    const newOptions = [...item.options];
+    newOptions[item.selectedOptionIndex] = {
+      ...selectedOption,
+      name: editData.name,
+      price: editData.price,
+      imageUrl: editData.imageUrl
+    };
+    updateItem(item.id, { options: newOptions });
+    setIsEditingItem(false);
+  };
 
   const handleAddOption = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +59,8 @@ export function WishlistItem({ item, updateItem, deleteItem, categories }: Wishl
         url: newOptionUrl,
         name: data.name || "Produto sem nome",
         price: data.price || null,
+        originalPrice: data.originalPrice || null,
+        installments: data.installments || null,
         imageUrl: data.imageUrl || "https://placehold.co/400x400?text=Sem+Imagem",
       };
       updateItem(item.id, {
@@ -59,6 +87,8 @@ export function WishlistItem({ item, updateItem, deleteItem, categories }: Wishl
         ...option,
         name: data.name || option.name,
         price: data.price !== undefined ? data.price : option.price,
+        originalPrice: data.originalPrice !== undefined ? data.originalPrice : option.originalPrice,
+        installments: data.installments !== undefined ? data.installments : option.installments,
         imageUrl: data.imageUrl || option.imageUrl,
         loading: false
       };
@@ -77,19 +107,39 @@ export function WishlistItem({ item, updateItem, deleteItem, categories }: Wishl
         </div>
       )}
       
-      <div className="w-20 h-20 bg-zinc-100 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border border-zinc-100">
+      <div className="w-20 h-20 bg-zinc-100 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border border-zinc-100 relative group/img">
         <img 
           src={selectedOption?.imageUrl} 
           alt={selectedOption?.name} 
           className="w-full h-full object-cover"
         />
+        {isEditingItem && (
+          <div className="absolute inset-0 bg-black/50 p-1 flex items-center justify-center">
+             <input
+                type="url"
+                value={editData.imageUrl || ""}
+                onChange={(e) => setEditData({...editData, imageUrl: e.target.value})}
+                placeholder="URL da Imagem"
+                className="w-full text-[8px] bg-white text-black px-1 py-1 rounded opacity-90"
+             />
+          </div>
+        )}
       </div>
 
       <div className="flex-1 w-full min-w-0">
         <div className="flex justify-between items-start gap-2">
-          <h3 className="font-bold text-sm text-zinc-800 line-clamp-2" title={selectedOption?.name}>
-            {selectedOption?.name}
-          </h3>
+          {isEditingItem ? (
+            <textarea
+              value={editData.name || ""}
+              onChange={(e) => setEditData({...editData, name: e.target.value})}
+              className="w-full text-sm font-bold text-zinc-800 border border-yellow-400 rounded px-1 focus:outline-none resize-none"
+              rows={2}
+            />
+          ) : (
+            <h3 className="font-bold text-sm text-zinc-800 line-clamp-2" title={selectedOption?.name}>
+              {selectedOption?.name}
+            </h3>
+          )}
           <select
             value={item.category}
             onChange={(e) => updateItem(item.id, { category: e.target.value })}
@@ -109,27 +159,55 @@ export function WishlistItem({ item, updateItem, deleteItem, categories }: Wishl
           />
         </div>
         
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-black text-zinc-900">
-            {formatPrice(selectedOption?.price)}
-          </span>
-          <button
-            onClick={() => handleRefreshOption(item.selectedOptionIndex)}
-            disabled={selectedOption?.loading}
-            className="p-1.5 text-zinc-300 hover:text-emerald-500 rounded-full transition-colors disabled:opacity-50"
-            title="Atualizar preço"
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", selectedOption?.loading && "animate-spin")} />
-          </button>
-          <a 
-            href={selectedOption?.url} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-zinc-300 hover:text-zinc-600 p-1.5"
-            title="Abrir no site"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+        <div className="flex items-start gap-2">
+          {isEditingItem ? (
+            <input
+              type="number"
+              step="0.01"
+              value={editData.price || ""}
+              onChange={(e) => setEditData({...editData, price: parseFloat(e.target.value) || 0})}
+              className="w-24 text-lg font-black text-zinc-900 border border-yellow-400 rounded px-1 focus:outline-none"
+            />
+          ) : (
+            <div className="flex flex-col">
+              {selectedOption?.originalPrice && selectedOption.originalPrice > (selectedOption?.price || 0) && (
+                <span className="text-[10px] text-zinc-400 line-through leading-none mb-0.5">
+                  {formatPrice(selectedOption.originalPrice)}
+                </span>
+              )}
+              <span className="text-lg font-black text-zinc-900 leading-none">
+                {formatPrice(selectedOption?.price)}
+              </span>
+              {selectedOption?.installments && (
+                <span className="text-[10px] font-bold text-emerald-600 mt-1">
+                  em {selectedOption.installments.count}x {formatPrice(selectedOption.installments.value)}
+                  {selectedOption.installments.interestFree ? " s/ juros" : ""}
+                </span>
+              )}
+            </div>
+          )}
+          
+          {!isEditingItem && (
+            <>
+              <button
+                onClick={() => handleRefreshOption(item.selectedOptionIndex)}
+                disabled={selectedOption?.loading}
+                className="p-1.5 text-zinc-300 hover:text-emerald-500 rounded-full transition-colors disabled:opacity-50"
+                title="Atualizar preço automaticamente"
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5", selectedOption?.loading && "animate-spin")} />
+              </button>
+              <a 
+                href={selectedOption?.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-zinc-300 hover:text-zinc-600 p-1.5"
+                title="Abrir no site"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </>
+          )}
         </div>
       </div>
 
@@ -186,17 +264,48 @@ export function WishlistItem({ item, updateItem, deleteItem, categories }: Wishl
               + Opção
             </button>
           )}
-          <button
-            onClick={() => {
-              if (window.confirm("Deseja remover este item da sua lista?")) {
-                deleteItem(item.id);
-              }
-            }}
-            className="text-zinc-300 hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors"
-            title="Remover produto"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {isEditingItem ? (
+            <button
+              onClick={handleSaveEdit}
+              className="text-emerald-500 hover:text-emerald-600 p-1 rounded-full hover:bg-emerald-50 transition-colors"
+              title="Salvar alterações"
+            >
+              <Check className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <button
+              onClick={handleStartEdit}
+              className="text-zinc-300 hover:text-blue-500 p-1 rounded-full hover:bg-blue-50 transition-colors"
+              title="Editar manualmente (Imagem, Nome e Preço)"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {isDeleting ? (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-red-500 font-bold">Excluir?</span>
+              <button
+                onClick={() => deleteItem(item.id)}
+                className="text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded text-[10px] font-bold"
+              >
+                Sim
+              </button>
+              <button
+                onClick={() => setIsDeleting(false)}
+                className="text-zinc-500 hover:text-zinc-700 px-2 py-0.5 rounded text-[10px] bg-zinc-100 hover:bg-zinc-200 font-bold"
+              >
+                Não
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsDeleting(true)}
+              className="text-zinc-300 hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors"
+              title="Remover produto"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>

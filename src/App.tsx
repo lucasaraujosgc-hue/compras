@@ -23,6 +23,9 @@ export default function App() {
   });
   
   const [newCategory, setNewCategory] = useState("");
+  
+  const [searchTerm, setSearchTerm] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
 
   useEffect(() => {
     localStorage.setItem("wishlist_items", JSON.stringify(items));
@@ -55,9 +58,16 @@ export default function App() {
     }
   };
   
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+
   const handleDeleteCategory = (catToDelete: string) => {
-    if (confirm(`Deseja excluir a categoria "${catToDelete}"?\nOs produtos que estão nela não serão perdidos.`)) {
-      setAvailableCategories(prev => prev.filter(c => c !== catToDelete));
+    setCategoryToDelete(catToDelete);
+  };
+
+  const confirmDeleteCategory = () => {
+    if (categoryToDelete) {
+      setAvailableCategories(prev => prev.filter(c => c !== categoryToDelete));
+      setCategoryToDelete(null);
     }
   };
 
@@ -70,8 +80,17 @@ export default function App() {
     return sum;
   }, 0);
 
+  // Filter logic
+  const filteredItems = items.filter(item => {
+    const opt = item.options[item.selectedOptionIndex] || item.options[0];
+    const matchesSearch = !searchTerm || opt?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const itemPrice = opt?.price || 0;
+    const matchesPrice = !maxPrice || itemPrice <= Number(maxPrice);
+    return matchesSearch && matchesPrice;
+  });
+
   // Sort items: First by priority (descending), then by name
-  const sortedItems = [...items].sort((a, b) => {
+  const sortedItems = [...filteredItems].sort((a, b) => {
     if (b.priority !== a.priority) {
       return b.priority - a.priority;
     }
@@ -79,6 +98,11 @@ export default function App() {
     const bName = b.options[0]?.name || "";
     return aName.localeCompare(bName);
   });
+
+  const groupedCategories = availableCategories.map(cat => ({
+    category: cat,
+    items: sortedItems.filter(i => (i.category || 'Geral') === cat)
+  })).filter(group => group.items.length > 0);
 
   const highPriorityCount = items.filter(i => i.priority >= 4).length;
   
@@ -100,40 +124,68 @@ export default function App() {
         
         <div className="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-6 gap-4 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
           {/* Main List Area (Bento 8x6) */}
-          <div className="col-span-1 lg:col-span-8 lg:row-span-6 bg-white border border-zinc-200 rounded-3xl shadow-sm overflow-hidden flex flex-col h-[500px] lg:h-full">
-            <div className="p-4 md:p-5 border-b border-zinc-100 flex flex-col xl:flex-row justify-between xl:items-center bg-zinc-50/50 gap-4">
-              <h2 className="font-bold text-zinc-700 flex items-center gap-2 whitespace-nowrap shrink-0">
-                <ListOrdered className="w-5 h-5 text-yellow-500" />
-                Lista de Compras
-              </h2>
+          <div className="col-span-1 lg:col-span-8 lg:row-span-6 flex flex-col gap-4 overflow-y-auto h-[500px] lg:h-full pr-1 pb-20 lg:pb-0">
+            {/* Top Bar with Add and Filters */}
+            <div className="bg-white border border-zinc-200 rounded-3xl shadow-sm p-4 md:p-5 flex flex-col xl:flex-row justify-between xl:items-center gap-4 shrink-0">
+              <div className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="Buscar pelo nome..."
+                  className="bg-zinc-50 border border-zinc-200 text-xs px-3 py-2 rounded-lg w-full sm:w-48 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+                <input
+                  type="number"
+                  value={maxPrice}
+                  onChange={e => setMaxPrice(e.target.value)}
+                  placeholder="Preço máximo..."
+                  className="bg-zinc-50 border border-zinc-200 text-xs px-3 py-2 rounded-lg w-full sm:w-32 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+              </div>
               <AddProductForm onAdd={handleAddItem} categories={availableCategories} />
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {items.length === 0 ? (
-                <div className="text-center py-20">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-zinc-100 text-zinc-400 mb-3">
-                    <LayoutList className="w-6 h-6" />
-                  </div>
-                  <p className="text-zinc-500 text-sm font-medium">Sua lista está vazia</p>
-                  <p className="text-zinc-400 text-xs mt-1">Cole um link acima para começar</p>
+            {/* Category Boards */}
+            {items.length === 0 ? (
+              <div className="bg-white border border-zinc-200 rounded-3xl shadow-sm p-10 text-center flex-1 flex flex-col items-center justify-center">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-zinc-100 text-zinc-400 mb-3">
+                  <LayoutList className="w-6 h-6" />
                 </div>
-              ) : (
-                sortedItems.map((item) => (
-                  <WishlistItem
-                    key={item.id}
-                    item={item}
-                    updateItem={updateItem}
-                    deleteItem={deleteItem}
-                    categories={availableCategories}
-                  />
-                ))
-              )}
-            </div>
-            <div className="p-3 bg-zinc-50 text-[10px] text-zinc-400 flex justify-between border-t border-zinc-100 font-medium">
-              <span>Gerenciado localmente</span>
-              <span>*Valores sujeitos a alteração</span>
-            </div>
+                <p className="text-zinc-500 text-sm font-medium">Sua lista está vazia</p>
+                <p className="text-zinc-400 text-xs mt-1">Adicione um link acima para começar</p>
+              </div>
+            ) : groupedCategories.length === 0 ? (
+               <div className="bg-white border border-zinc-200 rounded-3xl shadow-sm p-10 text-center flex-1 flex flex-col items-center justify-center">
+                 <p className="text-zinc-500 text-sm font-medium">Nenhum item encontrado com esses filtros.</p>
+               </div>
+            ) : (
+              groupedCategories.map(group => (
+                <div key={group.category} className="bg-white border border-zinc-200 rounded-3xl shadow-sm overflow-hidden flex flex-col shrink-0">
+                  <div className="p-3 md:p-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+                    <h2 className="font-bold text-zinc-700 flex items-center gap-2">
+                      <ListOrdered className="w-4 h-4 text-yellow-500" />
+                      {group.category}
+                    </h2>
+                    <span className="text-[10px] font-bold text-zinc-400 bg-zinc-200/50 px-2 py-0.5 rounded-full">
+                      {group.items.length} {group.items.length === 1 ? 'item' : 'itens'}
+                    </span>
+                  </div>
+                  
+                  <div className="p-3 md:p-4 space-y-3">
+                    {group.items.map((item) => (
+                      <WishlistItem
+                        key={item.id}
+                        item={item}
+                        updateItem={updateItem}
+                        deleteItem={deleteItem}
+                        categories={availableCategories}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           {/* Side Panels - visible mainly on large screens, stack on small */}
@@ -198,7 +250,12 @@ export default function App() {
                     <span className="text-[10px] font-bold text-zinc-500 shrink-0">
                       {formatPrice(categoriesData[cat]?.total || 0)}
                     </span>
-                    {cat !== "Geral" && (
+                    {cat !== "Geral" && categoryToDelete === cat ? (
+                      <div className="flex items-center gap-1">
+                        <button onClick={confirmDeleteCategory} className="text-white bg-red-500 hover:bg-red-600 rounded px-1.5 py-0.5 text-[8px] font-bold">Sim</button>
+                        <button onClick={() => setCategoryToDelete(null)} className="text-zinc-500 bg-zinc-200 hover:bg-zinc-300 rounded px-1.5 py-0.5 text-[8px] font-bold">Não</button>
+                      </div>
+                    ) : cat !== "Geral" && (
                       <button 
                         onClick={() => handleDeleteCategory(cat)} 
                         className="text-zinc-300 hover:text-red-500 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity p-0.5"

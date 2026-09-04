@@ -21,5 +21,24 @@ export async function extractProduct(url: string) {
     throw new Error("Falha ao extrair dados do produto");
   }
   
-  return response.json();
+  const data = await response.json();
+  
+  // Mapeia o formato estruturado do Mercado Livre se ele existir
+  if (data.produto && data.produto.nome) {
+    const parcelamento = data.produto.precos?.parcelamento;
+    return {
+      name: data.produto.nome,
+      price: data.produto.precos?.com_desconto?.valor || 0,
+      originalPrice: data.produto.precos?.original?.valor || null,
+      installments: parcelamento ? {
+        count: parcelamento.numero_parcelas,
+        value: parcelamento.valor_parcela,
+        interestFree: !parcelamento.juros
+      } : null,
+      imageUrl: data.produto.imagem?.url || "",
+    };
+  }
+  
+  // Formato padrão (IA ou Fallback OG)
+  return data;
 }

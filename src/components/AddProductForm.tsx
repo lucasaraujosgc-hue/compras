@@ -32,6 +32,8 @@ export function AddProductForm({ onAdd, categories }: AddProductFormProps) {
         url,
         name: data.name || "Produto sem nome",
         price: data.price || null,
+        originalPrice: data.originalPrice || null,
+        installments: data.installments || null,
         imageUrl: data.imageUrl || "https://placehold.co/400x400?text=Sem+Imagem",
       };
 
