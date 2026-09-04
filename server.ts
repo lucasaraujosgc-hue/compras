@@ -303,11 +303,17 @@ async function startServer() {
       }
 
       const response = await fetch(url, {
+        redirect: "follow",
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Sec-Fetch-User": "?1",
+          "Sec-Fetch-Dest": "document",
+          "Upgrade-Insecure-Requests": "1",
         },
       });
 
@@ -318,6 +324,10 @@ async function startServer() {
       const html = await response.text();
       const $ = cheerio.load(html);
 
+      console.log(
+        `[extract] url=${url} finalUrl=${response.url} status=${response.status} htmlLength=${html.length} hasNordicScript=${!!$("#__NORDIC_RENDERING_CTX__").length}`
+      );
+
       // 1. TENTATIVA DE EXTRAÇÃO DIRETA SEM IA (MERCADO LIVRE E OUTROS VIA SCRIPT)
       try {
         const initialState = extractMercadoLivreInitialState($);
@@ -326,6 +336,9 @@ async function startServer() {
           if (produto) {
             return res.json({ produto });
           }
+          console.warn("[extract] initialState encontrado mas buildMercadoLivreProduct retornou null (faltou nome ou preço)");
+        } else {
+          console.warn("[extract] Nenhum initialState encontrado (nem NORDIC_RENDERING_CTX nem PRELOADED_STATE)");
         }
       } catch (e) {
         console.error("Erro ao fazer parse do NORDIC_RENDERING_CTX/PRELOADED_STATE", e);
@@ -400,6 +413,19 @@ async function startServer() {
       }
       if (!data.name && ogTitle) {
         data.name = ogTitle;
+      }
+
+      // Se nem o parse estruturado, nem a IA, nem as tags OG renderam nada útil,
+      // não finja sucesso: isso costuma indicar que o site bloqueou a requisição
+      // (página de verificação/captcha em vez do produto real).
+      if (!data.name || (!data.price && !data.imageUrl)) {
+        console.warn(
+          `[extract] Extração sem dados suficientes. name=${JSON.stringify(data.name)} price=${data.price} imageUrl=${JSON.stringify(data.imageUrl)}`
+        );
+        return res.status(422).json({
+          error:
+            "Não foi possível extrair os dados do produto. O site pode estar bloqueando o acesso automático (ex.: verificação anti-robô) ou a página não é uma página de produto válida.",
+        });
       }
 
       res.json(data);
