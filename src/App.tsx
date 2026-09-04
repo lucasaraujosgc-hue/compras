@@ -12,15 +12,9 @@ import { LayoutList, Star, ListOrdered, X, Plus } from "lucide-react";
 import { formatPrice, cn } from "./lib/utils";
 
 export default function App() {
-  const [items, setItems] = useState<WishlistItemType[]>(() => {
-    const saved = localStorage.getItem("wishlist_items");
-    return saved ? JSON.parse(saved) : [];
-  });
-  
-  const [availableCategories, setAvailableCategories] = useState<string[]>(() => {
-    const saved = localStorage.getItem("wishlist_categories");
-    return saved ? JSON.parse(saved) : ["Geral", "Eletrônicos", "Casa", "Jogos", "Saúde"];
-  });
+  const [items, setItems] = useState<WishlistItemType[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>(["Geral", "Eletrônicos", "Casa", "Jogos", "Saúde"]);
+  const [isLoaded, setIsLoaded] = useState(false);
   
   const [newCategory, setNewCategory] = useState("");
   
@@ -28,12 +22,38 @@ export default function App() {
   const [maxPrice, setMaxPrice] = useState("");
 
   useEffect(() => {
-    localStorage.setItem("wishlist_items", JSON.stringify(items));
-  }, [items]);
+    fetch('/api/state')
+      .then(res => res.json())
+      .then(data => {
+        if (data.items) setItems(data.items);
+        if (data.categories) setAvailableCategories(data.categories);
+        setIsLoaded(true);
+      })
+      .catch(err => {
+        console.error("Failed to load state from server, falling back to localStorage", err);
+        // Fallback for seamless migration from localstorage to backend
+        const savedItems = localStorage.getItem("wishlist_items");
+        const savedCats = localStorage.getItem("wishlist_categories");
+        if (savedItems) setItems(JSON.parse(savedItems));
+        if (savedCats) setAvailableCategories(JSON.parse(savedCats));
+        setIsLoaded(true);
+      });
+  }, []);
 
   useEffect(() => {
+    if (!isLoaded) return;
+    
+    // Save to server
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, categories: availableCategories })
+    }).catch(console.error);
+    
+    // Also save to localStorage as a backup
+    localStorage.setItem("wishlist_items", JSON.stringify(items));
     localStorage.setItem("wishlist_categories", JSON.stringify(availableCategories));
-  }, [availableCategories]);
+  }, [items, availableCategories, isLoaded]);
 
   const handleAddItem = (item: WishlistItemType) => {
     setItems((prev) => [item, ...prev]);

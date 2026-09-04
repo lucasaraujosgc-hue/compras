@@ -3,14 +3,53 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import * as cheerio from "cheerio";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
+import fs from "fs/promises";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const DB_FILE = path.join(process.cwd(), "data", "db.json");
+
+async function initDB() {
+  try {
+    await fs.mkdir(path.dirname(DB_FILE), { recursive: true });
+    try {
+      await fs.access(DB_FILE);
+    } catch {
+      await fs.writeFile(
+        DB_FILE,
+        JSON.stringify({
+          items: [],
+          categories: ["Geral", "Casa", "Roupas", "Jogos", "Eletrônicos"],
+        })
+      );
+    }
+  } catch (e) {
+    console.error("Failed to init DB", e);
+  }
+}
 
 async function startServer() {
+  await initDB();
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  app.get("/api/state", async (req, res) => {
+    try {
+      const data = await fs.readFile(DB_FILE, "utf-8");
+      res.json(JSON.parse(data));
+    } catch (e) {
+      res.status(500).json({ error: "Failed to read state" });
+    }
+  });
+
+  app.post("/api/state", async (req, res) => {
+    try {
+      await fs.writeFile(DB_FILE, JSON.stringify(req.body, null, 2));
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to save state" });
+    }
+  });
 
   app.post("/api/extract", async (req, res) => {
     try {
@@ -38,70 +77,79 @@ async function startServer() {
       // 1. TENTATIVA DE EXTRAÇÃO DIRETA SEM IA (MERCADO LIVRE E OUTROS VIA SCRIPT)
       const nordicScript = $('#__NORDIC_RENDERING_CTX__').html();
       if (nordicScript) {
-        const jsonMatch = nordicScript.match(/_n\.ctx\.r\s*=\s*(.*);?/);
-        if (jsonMatch) {
-          try {
-            const jsonStr = jsonMatch[1].trim().replace(/;$/, '');
-            const ctx = JSON.parse(jsonStr);
-            const initialState = ctx?.appProps?.pageProps?.initialState;
-            
-            if (initialState) {
-              const name = initialState.header?.title || initialState.seo?.title || "";
-              const priceData = initialState.price?.price || {};
-              const originalPriceData = initialState.price?.original_price || {};
-              const priceInstallments = initialState.price?.price_installments || {};
-              const installmentsAmount = initialState.price?.installments_amount;
-              const totalPrice = initialState.price?.total_price || {};
+        try {
+          const parts = nordicScript.split('_n.ctx.r=');
+          if (parts.length > 1) {
+            let jsonStr = parts[1];
+            // Encontra o primeiro { e tenta extrair apenas o objeto JSON principal para evitar lixo no final
+            const firstBrace = jsonStr.indexOf('{');
+            if (firstBrace !== -1) {
+              jsonStr = jsonStr.substring(firstBrace);
+              // Como pode ter código depois, vamos usar uma heurística simples: limpar tudo após ;_n ou ;</script>
+              jsonStr = jsonStr.split(/;[_\w]+\.|;<\/script>|<\/script>/)[0].trim();
+              if (jsonStr.endsWith(';')) jsonStr = jsonStr.slice(0, -1);
               
-              const price = priceData.value || 0;
-              let imageUrl = "";
-              let imageId = "";
+              const ctx = JSON.parse(jsonStr);
+              const initialState = ctx?.appProps?.pageProps?.initialState;
               
-              const gallery = initialState.gallery;
-              if (gallery?.picture_config?.template_zoom && gallery?.pictures?.length > 0) {
-                const pic = gallery.pictures[0];
-                imageId = pic.id || '';
-                imageUrl = gallery.picture_config.template_zoom
-                  .replace('{id}', imageId)
-                  .replace('{sanitizedTitle}', pic.sanitized_title || '');
-              }
-              
-              if (name && price > 0) {
-                // Retorna exatamente no formato JSON solicitado para Mercado Livre
-                const parcelamento = (priceInstallments.value && installmentsAmount) ? {
-                  valor_total: totalPrice.value || (priceInstallments.value * installmentsAmount),
-                  valor_parcela: priceInstallments.value,
-                  numero_parcelas: installmentsAmount,
-                  juros: totalPrice.value ? (totalPrice.value > price) : false
-                } : null;
+              if (initialState) {
+                const name = initialState.header?.title || initialState.seo?.title || "";
+                const priceData = initialState.price?.price || {};
+                const originalPriceData = initialState.price?.original_price || {};
+                const priceInstallments = initialState.price?.price_installments || {};
+                const installmentsAmount = initialState.price?.installments_amount;
+                const totalPrice = initialState.price?.total_price || {};
+                
+                const price = priceData.value || 0;
+                let imageUrl = "";
+                let imageId = "";
+                
+                const gallery = initialState.gallery;
+                if (gallery?.picture_config?.template_zoom && gallery?.pictures?.length > 0) {
+                  const pic = gallery.pictures[0];
+                  imageId = pic.id || '';
+                  imageUrl = gallery.picture_config.template_zoom
+                    .replace('{id}', imageId)
+                    .replace('{sanitizedTitle}', pic.sanitized_title || '');
+                }
+                
+                if (name && price > 0) {
+                  // Retorna exatamente no formato JSON solicitado para Mercado Livre
+                  const parcelamento = (priceInstallments.value && installmentsAmount) ? {
+                    valor_total: totalPrice.value || (priceInstallments.value * installmentsAmount),
+                    valor_parcela: priceInstallments.value,
+                    numero_parcelas: installmentsAmount,
+                    juros: totalPrice.value ? (totalPrice.value > price) : false
+                  } : null;
 
-                return res.json({
-                  produto: {
-                    nome: name,
-                    precos: {
-                      com_desconto: {
-                        valor: price,
-                        moeda: priceData.currency_symbol || "R$",
-                        codigo_moeda: priceData.currency_id || "BRL"
+                  return res.json({
+                    produto: {
+                      nome: name,
+                      precos: {
+                        com_desconto: {
+                          valor: price,
+                          moeda: priceData.currency_symbol || "R$",
+                          codigo_moeda: priceData.currency_id || "BRL"
+                        },
+                        original: originalPriceData.value ? {
+                          valor: originalPriceData.value,
+                          moeda: originalPriceData.currency_symbol || "R$",
+                          codigo_moeda: originalPriceData.currency_id || "BRL"
+                        } : null,
+                        parcelamento
                       },
-                      original: originalPriceData.value ? {
-                        valor: originalPriceData.value,
-                        moeda: originalPriceData.currency_symbol || "R$",
-                        codigo_moeda: originalPriceData.currency_id || "BRL"
-                      } : null,
-                      parcelamento
-                    },
-                    imagem: {
-                      url: imageUrl,
-                      id: imageId
+                      imagem: {
+                        url: imageUrl,
+                        id: imageId
+                      }
                     }
-                  }
-                });
+                  });
+                }
               }
             }
-          } catch (e) {
-            console.error("Erro ao fazer parse do NORDIC_RENDERING_CTX", e);
           }
+        } catch (e) {
+          console.error("Erro ao fazer parse do NORDIC_RENDERING_CTX", e);
         }
       }
       
@@ -146,17 +194,27 @@ async function startServer() {
       ${bodyText}
       `;
 
-      const aiResponse = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: schema,
-          temperature: 0.1,
-        },
-      });
+      let data: any = {};
 
-      const data = JSON.parse(aiResponse.text || "{}");
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const aiResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: schema,
+              temperature: 0.1,
+            },
+          });
+          data = JSON.parse(aiResponse.text || "{}");
+        } catch (aiError) {
+          console.error("AI Extraction failed:", aiError);
+        }
+      } else {
+        console.warn("GEMINI_API_KEY is not set. Skipping AI extraction.");
+      }
       
       // Fallbacks
       if (!data.imageUrl && ogImage) {
