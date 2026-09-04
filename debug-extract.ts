@@ -14,7 +14,12 @@ import {
   buildMercadoLivreProduct,
   type MercadoLivreDiagnostics,
 } from "./mercadoLivreExtractor";
-import { extractMercadoLivreItemId, isMercadoLivreUrl, fetchMercadoLivreProductViaApi } from "./mercadoLivreApi";
+import {
+  extractMercadoLivreItemId,
+  isMercadoLivreUrl,
+  fetchMercadoLivreProductViaApi,
+  type MercadoLivreApiDiagnostics,
+} from "./mercadoLivreApi";
 
 async function main() {
   const url = process.argv[2];
@@ -29,15 +34,19 @@ async function main() {
     console.log(`\n>> URL do Mercado Livre detectada. ID extraído: ${itemId ?? "NENHUM"}`);
     if (itemId) {
       console.log(`>> Consultando https://api.mercadolibre.com/items/${itemId} ...`);
+      const apiDiagnostics: MercadoLivreApiDiagnostics = {};
       try {
-        const produto = await fetchMercadoLivreProductViaApi(itemId);
+        const produto = await fetchMercadoLivreProductViaApi(itemId, apiDiagnostics);
+        console.log(`   status HTTP: ${apiDiagnostics.status} (ok=${apiDiagnostics.ok})`);
         if (produto) {
           console.log("\n>> SUCESSO via API oficial! Produto extraído:\n");
           console.log(JSON.stringify({ produto }, null, 2));
           console.log("\n(Pulando a rota de scraping HTML, pois a API já retornou os dados.)\n");
           return;
         }
-        console.warn(">> API respondeu mas sem dados suficientes (título/preço). Tentando via HTML...\n");
+        console.warn(`>> API não retornou dados suficientes. Motivo: ${apiDiagnostics.errorMessage}`);
+        console.warn(`   Corpo da resposta (até 4000 chars):\n${apiDiagnostics.rawBody}\n`);
+        console.warn(">> Tentando via HTML...\n");
       } catch (e) {
         console.error(">> Erro ao consultar a API oficial:", e, "\n   Tentando via HTML...\n");
       }

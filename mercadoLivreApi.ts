@@ -37,6 +37,13 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "US$",
 };
 
+export interface MercadoLivreApiDiagnostics {
+  status?: number;
+  ok?: boolean;
+  rawBody?: string;
+  errorMessage?: string;
+}
+
 /**
  * Busca os dados do produto direto na API pública do Mercado Livre
  * (https://api.mercadolibre.com/items/{id}), sem precisar renderizar/raspar
@@ -44,12 +51,38 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
  * cai nas páginas de verificação anti-robô que bloqueiam scraping de HTML
  * a partir de IPs de datacenter/VPS.
  */
-export async function fetchMercadoLivreProductViaApi(itemId: string): Promise<MercadoLivreProduct | null> {
+export async function fetchMercadoLivreProductViaApi(
+  itemId: string,
+  diagnostics?: MercadoLivreApiDiagnostics
+): Promise<MercadoLivreProduct | null> {
   const response = await fetch(`https://api.mercadolibre.com/items/${itemId}`);
-  if (!response.ok) return null;
+  if (diagnostics) {
+    diagnostics.status = response.status;
+    diagnostics.ok = response.ok;
+  }
 
-  const item: MercadoLivreApiItem = await response.json();
-  if (!item?.title || !(item.price > 0)) return null;
+  const bodyText = await response.text();
+  if (diagnostics) diagnostics.rawBody = bodyText.slice(0, 4000);
+
+  if (!response.ok) {
+    if (diagnostics) diagnostics.errorMessage = `HTTP ${response.status}`;
+    return null;
+  }
+
+  let item: MercadoLivreApiItem;
+  try {
+    item = JSON.parse(bodyText);
+  } catch {
+    if (diagnostics) diagnostics.errorMessage = "Resposta não é JSON válido";
+    return null;
+  }
+
+  if (!item?.title || !(item.price > 0)) {
+    if (diagnostics) {
+      diagnostics.errorMessage = `title=${JSON.stringify(item?.title)} price=${JSON.stringify(item?.price)}`;
+    }
+    return null;
+  }
 
   const moeda = CURRENCY_SYMBOLS[item.currency_id] || item.currency_id;
   const valor = item.price;

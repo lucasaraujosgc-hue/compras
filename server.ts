@@ -5,7 +5,12 @@ import * as cheerio from "cheerio";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import fs from "fs/promises";
 import { extractMercadoLivreInitialState, buildMercadoLivreProduct } from "./mercadoLivreExtractor";
-import { extractMercadoLivreItemId, isMercadoLivreUrl, fetchMercadoLivreProductViaApi } from "./mercadoLivreApi";
+import {
+  extractMercadoLivreItemId,
+  isMercadoLivreUrl,
+  fetchMercadoLivreProductViaApi,
+  type MercadoLivreApiDiagnostics,
+} from "./mercadoLivreApi";
 
 const DB_FILE = path.join(process.cwd(), "data", "db.json");
 
@@ -67,13 +72,16 @@ async function startServer() {
       if (isMercadoLivreUrl(url)) {
         const itemId = extractMercadoLivreItemId(url);
         if (itemId) {
+          const apiDiagnostics: MercadoLivreApiDiagnostics = {};
           try {
-            const produto = await fetchMercadoLivreProductViaApi(itemId);
+            const produto = await fetchMercadoLivreProductViaApi(itemId, apiDiagnostics);
             if (produto) {
               console.log(`[extract] Produto obtido via API oficial do Mercado Livre (item ${itemId})`);
               return res.json({ produto });
             }
-            console.warn(`[extract] API do Mercado Livre não retornou dados suficientes para ${itemId}, tentando via HTML`);
+            console.warn(
+              `[extract] API do Mercado Livre não retornou dados suficientes para ${itemId} (status=${apiDiagnostics.status} motivo=${apiDiagnostics.errorMessage}), tentando via HTML`
+            );
           } catch (e) {
             console.error(`[extract] Erro ao consultar API do Mercado Livre para ${itemId}`, e);
           }
