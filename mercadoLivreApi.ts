@@ -50,12 +50,19 @@ export interface MercadoLivreApiDiagnostics {
  * a página HTML. Como é a API oficial usada por integrações legítimas, não
  * cai nas páginas de verificação anti-robô que bloqueiam scraping de HTML
  * a partir de IPs de datacenter/VPS.
+ *
+ * Passe `accessToken` (veja mercadoLivreAuth.ts) quando disponível: o
+ * Mercado Livre vem retornando 403 para chamadas anônimas a partir de IPs
+ * de datacenter/VPS, mesmo nesse endpoint público.
  */
 export async function fetchMercadoLivreProductViaApi(
   itemId: string,
-  diagnostics?: MercadoLivreApiDiagnostics
+  diagnostics?: MercadoLivreApiDiagnostics,
+  accessToken?: string | null
 ): Promise<MercadoLivreProduct | null> {
-  const response = await fetch(`https://api.mercadolibre.com/items/${itemId}`);
+  const response = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
   if (diagnostics) {
     diagnostics.status = response.status;
     diagnostics.ok = response.ok;

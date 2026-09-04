@@ -20,6 +20,7 @@ import {
   fetchMercadoLivreProductViaApi,
   type MercadoLivreApiDiagnostics,
 } from "./mercadoLivreApi";
+import { getMercadoLivreAccessToken } from "./mercadoLivreAuth";
 
 async function main() {
   const url = process.argv[2];
@@ -33,10 +34,12 @@ async function main() {
     const itemId = extractMercadoLivreItemId(url);
     console.log(`\n>> URL do Mercado Livre detectada. ID extraído: ${itemId ?? "NENHUM"}`);
     if (itemId) {
+      const accessToken = await getMercadoLivreAccessToken();
+      console.log(`>> Token OAuth configurado: ${accessToken ? "SIM" : "NÃO (chamando sem autenticação)"}`);
       console.log(`>> Consultando https://api.mercadolibre.com/items/${itemId} ...`);
       const apiDiagnostics: MercadoLivreApiDiagnostics = {};
       try {
-        const produto = await fetchMercadoLivreProductViaApi(itemId, apiDiagnostics);
+        const produto = await fetchMercadoLivreProductViaApi(itemId, apiDiagnostics, accessToken);
         console.log(`   status HTTP: ${apiDiagnostics.status} (ok=${apiDiagnostics.ok})`);
         if (produto) {
           console.log("\n>> SUCESSO via API oficial! Produto extraído:\n");

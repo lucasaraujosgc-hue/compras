@@ -11,6 +11,7 @@ import {
   fetchMercadoLivreProductViaApi,
   type MercadoLivreApiDiagnostics,
 } from "./mercadoLivreApi";
+import { getMercadoLivreAccessToken } from "./mercadoLivreAuth";
 
 const DB_FILE = path.join(process.cwd(), "data", "db.json");
 
@@ -74,7 +75,8 @@ async function startServer() {
         if (itemId) {
           const apiDiagnostics: MercadoLivreApiDiagnostics = {};
           try {
-            const produto = await fetchMercadoLivreProductViaApi(itemId, apiDiagnostics);
+            const accessToken = await getMercadoLivreAccessToken();
+            const produto = await fetchMercadoLivreProductViaApi(itemId, apiDiagnostics, accessToken);
             if (produto) {
               console.log(`[extract] Produto obtido via API oficial do Mercado Livre (item ${itemId})`);
               return res.json({ produto });
