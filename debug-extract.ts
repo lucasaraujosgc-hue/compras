@@ -14,6 +14,7 @@ import {
   buildMercadoLivreProduct,
   type MercadoLivreDiagnostics,
 } from "./mercadoLivreExtractor";
+import { extractMercadoLivreItemId, isMercadoLivreUrl, fetchMercadoLivreProductViaApi } from "./mercadoLivreApi";
 
 async function main() {
   const url = process.argv[2];
@@ -22,7 +23,28 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`\n>> Buscando: ${url}\n`);
+  // ROTA 0: API oficial do Mercado Livre (não depende de renderizar a página).
+  if (isMercadoLivreUrl(url)) {
+    const itemId = extractMercadoLivreItemId(url);
+    console.log(`\n>> URL do Mercado Livre detectada. ID extraído: ${itemId ?? "NENHUM"}`);
+    if (itemId) {
+      console.log(`>> Consultando https://api.mercadolibre.com/items/${itemId} ...`);
+      try {
+        const produto = await fetchMercadoLivreProductViaApi(itemId);
+        if (produto) {
+          console.log("\n>> SUCESSO via API oficial! Produto extraído:\n");
+          console.log(JSON.stringify({ produto }, null, 2));
+          console.log("\n(Pulando a rota de scraping HTML, pois a API já retornou os dados.)\n");
+          return;
+        }
+        console.warn(">> API respondeu mas sem dados suficientes (título/preço). Tentando via HTML...\n");
+      } catch (e) {
+        console.error(">> Erro ao consultar a API oficial:", e, "\n   Tentando via HTML...\n");
+      }
+    }
+  }
+
+  console.log(`\n>> ROTA HTML — Buscando: ${url}\n`);
 
   const response = await fetch(url, {
     redirect: "follow",

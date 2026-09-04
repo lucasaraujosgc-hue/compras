@@ -5,6 +5,7 @@ import * as cheerio from "cheerio";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import fs from "fs/promises";
 import { extractMercadoLivreInitialState, buildMercadoLivreProduct } from "./mercadoLivreExtractor";
+import { extractMercadoLivreItemId, isMercadoLivreUrl, fetchMercadoLivreProductViaApi } from "./mercadoLivreApi";
 
 const DB_FILE = path.join(process.cwd(), "data", "db.json");
 
@@ -57,6 +58,26 @@ async function startServer() {
       const { url } = req.body;
       if (!url) {
         return res.status(400).json({ error: "URL is required" });
+      }
+
+      // 0. MERCADO LIVRE: tenta a API pública oficial primeiro. Ela devolve o item em
+      // JSON diretamente, sem precisar renderizar a página — evita as páginas de
+      // verificação anti-robô ("/gz/account-verification") que bloqueiam scraping de
+      // HTML a partir de IPs de datacenter/VPS.
+      if (isMercadoLivreUrl(url)) {
+        const itemId = extractMercadoLivreItemId(url);
+        if (itemId) {
+          try {
+            const produto = await fetchMercadoLivreProductViaApi(itemId);
+            if (produto) {
+              console.log(`[extract] Produto obtido via API oficial do Mercado Livre (item ${itemId})`);
+              return res.json({ produto });
+            }
+            console.warn(`[extract] API do Mercado Livre não retornou dados suficientes para ${itemId}, tentando via HTML`);
+          } catch (e) {
+            console.error(`[extract] Erro ao consultar API do Mercado Livre para ${itemId}`, e);
+          }
+        }
       }
 
       const response = await fetch(url, {
